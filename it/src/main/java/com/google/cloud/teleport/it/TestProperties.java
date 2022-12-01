@@ -42,6 +42,7 @@ public final class TestProperties {
   public static final String REGION_KEY = "region";
   public static final String STAGE_BUCKET = "stageBucket";
   public static final String SPEC_PATH_KEY = "specPath";
+  public static final String HOST_IP = "hostIp";
 
   // From environment variables
   public static final String ACCESS_TOKEN_KEY = "DT_IT_ACCESS_TOKEN";
@@ -65,6 +66,10 @@ public final class TestProperties {
     return new GoogleCredentials(new AccessToken(accessToken(), /* expirationTime= */ null));
   }
 
+  public static boolean hasArtifactBucket() {
+    return getProperty(ARTIFACT_BUCKET_KEY, null, Type.PROPERTY) != null;
+  }
+
   public static String artifactBucket() {
     return getProperty(ARTIFACT_BUCKET_KEY, Type.PROPERTY, true);
   }
@@ -81,8 +86,16 @@ public final class TestProperties {
     return getProperty(SPEC_PATH_KEY, Type.PROPERTY, false);
   }
 
+  public static boolean hasStageBucket() {
+    return getProperty(STAGE_BUCKET, null, Type.PROPERTY) != null;
+  }
+
   public static String stageBucket() {
     return getProperty(STAGE_BUCKET, Type.PROPERTY, false);
+  }
+
+  public static String hostIp() {
+    return getProperty(HOST_IP, "localhost", Type.PROPERTY);
   }
 
   /** Gets a property or throws an exception if it is not found. */
