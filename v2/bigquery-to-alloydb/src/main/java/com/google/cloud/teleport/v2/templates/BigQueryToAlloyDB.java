@@ -15,12 +15,10 @@
  */
 package com.google.cloud.teleport.v2.templates;
 
-import com.google.cloud.bigtable.beam.CloudBigtableIO;
-import com.google.cloud.bigtable.beam.CloudBigtableTableConfiguration;
+
 import com.google.cloud.teleport.metadata.Template;
 import com.google.cloud.teleport.metadata.TemplateCategory;
 import com.google.cloud.teleport.metadata.TemplateParameter;
-import com.google.cloud.teleport.v2.templates.BigQueryToBigtable.BigQueryToBigtableOptions;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.AvroToMutation;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
@@ -28,6 +26,14 @@ import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.Validation.Required;
+//own imports
+import com.google.cloud.teleport.v2.templates.BigQueryToAlloyDB.BigQueryToAlloyDBOptions;
+import org.apache.beam.sdk.io.TextIO;
+import com.google.cloud.teleport.v2.transforms.BigQueryConverters.ReadBigQuery;
+import com.google.cloud.teleport.v2.transforms.BigQueryConverters.TableRowToJsonFn;
+import com.google.cloud.teleport.v2.transforms.BigQueryConverters.BigQueryReadOptions;
+import org.apache.beam.sdk.transforms.ParDo;
+
 
 /**
  * Dataflow template which reads BigQuery data and writes it to AlloyDB. The source data can be
@@ -51,40 +57,13 @@ public class BigQueryToAlloyDB {
 
     @TemplateParameter.Text(
         order = 1,
-        description = "Input SQL query",
-        helpText = "SQL query in standard SQL to pull data from BigQuery")
-    String getReadQuery();
+        optional = true,
+        regexes = {"^.+$"},
+        description = "Input SQL query.",
+        helpText = "Query to be executed on the source to extract the data.",
+        example = "select * from sampledb.sample_table")
+    String getQuery();
 
-    void setReadQuery(String value);
-
-    @TemplateParameter.Text(
-        order = 2,
-        regexes = {"[A-Za-z_][A-Za-z_0-9]*"},
-        description = "Unique identifier column",
-        helpText = "Name of the BigQuery column storing the unique identifier of the row")
-    String getReadIdColumn();
-
-    void setReadIdColumn(String value);
-
-    @TemplateParameter.ProjectId(
-        order = 3,
-        description = "Project ID",
-        helpText =
-            "The ID of the Google Cloud project of the Cloud AlloyDB instance that you want to write data to")
-    @Required
-    String getAlloyDBWriteProjectId();
-
-    void setAlloyDBWriteProjectId(String value);
-
-    @TemplateParameter.Text(
-        order = 4,
-        regexes = {"[a-z][a-z0-9\\-]+[a-z0-9]"},
-        description = "Instance ID",
-        helpText = "The ID of the Cloud AlloyDB instance that contains the table")
-    @Required
-    String getAlloyDBWriteInstanceId();
-
-    void setAlloyDBWriteInstanceId(String value);
 
     /*
     TODO: Look at parameters included in python version and add them here.
@@ -99,9 +78,28 @@ public class BigQueryToAlloyDB {
    */
   public static void main(String[] args) {
 
-    BigQueryToAlloyDBOptions options =
-        PipelineOptionsFactory.fromArgs(args).withValidation().as(BigQueryToAlloyDBOptions.class);
+    // BigQueryToAlloyDBOptions options =
+    //     PipelineOptionsFactory.fromArgs(args).withValidation().as(BigQueryToAlloyDBOptions.class);
     
+    BigQueryReadOptions options = PipelineOptionsFactory.fromArgs(args)
+        .withValidation().as(BigQueryReadOptions.class);
+
+    Pipeline pipeline = Pipeline.create(options);
+
+    pipeline
+        .apply(
+            "ReadFromBigQuery",
+            ReadBigQuery.newBuilder()
+                .setOptions(options)
+                .build())
+        .apply("Convert to json", ParDo.of(new TableRowToJsonFn()))
+        .apply(
+            "Write to a text file",
+            TextIO.write().to("gs://eenclona-sandbox-project1-bq-alloy/output"));
+
+    pipeline.run();
+
+    /*
     // CloudAlloyDBTableConfiguration AlloyDBTableConfig =
     //     new CloudAlloyDBTableConfiguration.Builder()
     //         .withProjectId(options.getAlloyDBWriteProjectId())
@@ -169,5 +167,7 @@ public class BigQueryToAlloyDB {
         .apply("WriteToTable", CloudAlloyDBIO.writeToTable(AlloyDBTableConfig));
 
     pipeline.run();
+
+    */
   }
 }
