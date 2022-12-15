@@ -15,38 +15,28 @@
  */
 package com.google.cloud.teleport.v2.templates;
 
-
 import com.google.cloud.teleport.metadata.Template;
 import com.google.cloud.teleport.metadata.TemplateCategory;
-import com.google.cloud.teleport.metadata.TemplateParameter;
-import com.google.cloud.teleport.v2.transforms.BigQueryConverters.AvroToMutation;
-import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
-import org.apache.beam.sdk.options.Default;
-import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.options.Validation.Required;
-import org.apache.beam.sdk.io.TextIO;
+import com.google.cloud.teleport.v2.coders.FailsafeElementCoder;
+import com.google.cloud.teleport.v2.io.DynamicJdbcIO;
+import com.google.cloud.teleport.v2.options.BigQueryToJdbcOptions;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.ReadBigQuery;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.TableRowToJsonFn;
-import com.google.cloud.teleport.v2.transforms.BigQueryConverters.BigQueryReadOptions;
-import org.apache.beam.sdk.transforms.ParDo;
-import com.google.cloud.teleport.v2.options.BigQueryToJdbcOptions;
-import org.apache.beam.sdk.values.PCollection;
-import com.google.cloud.teleport.v2.io.DynamicJdbcIO;
-import java.util.List;
+import com.google.cloud.teleport.v2.utils.KMSEncryptedNestedValue;
+import com.google.common.base.Splitter;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import com.google.cloud.teleport.v2.utils.KMSEncryptedNestedValue;
+import java.sql.Types;
+import java.util.List;
+import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.jdbc.JdbcIO;
-import com.google.cloud.teleport.v2.coders.FailsafeElementCoder;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.values.PCollection;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.google.common.base.Splitter;
-import java.sql.Types;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
-
 
 /**
  * Dataflow template which reads BigQuery data and writes it to AlloyDB. The source data can be
@@ -74,21 +64,18 @@ public class BigQueryToAlloyDB {
    * @param args arguments to the pipeline
    */
   public static void main(String[] args) {
-    
-    BigQueryToJdbcOptions options = PipelineOptionsFactory.fromArgs(args)
-        .withValidation().as(BigQueryToJdbcOptions.class);
+
+    BigQueryToJdbcOptions options =
+        PipelineOptionsFactory.fromArgs(args).withValidation().as(BigQueryToJdbcOptions.class);
 
     Pipeline pipeline = Pipeline.create(options);
 
-    PCollection<String> tableDataString = pipeline
-        .apply(
-            "ReadFromBigQuery",
-            ReadBigQuery.newBuilder()
-                .setOptions(options)
-                .build())
-        .apply("Convert to json", ParDo.of(new TableRowToJsonFn()));
+    PCollection<String> tableDataString =
+        pipeline
+            .apply("ReadFromBigQuery", ReadBigQuery.newBuilder().setOptions(options).build())
+            .apply("Convert to json", ParDo.of(new TableRowToJsonFn()));
 
-    //TODO: Call DLP Module
+    // TODO: Call DLP Module
 
     DynamicJdbcIO.DynamicDataSourceConfiguration dataSourceConfiguration =
         DynamicJdbcIO.DynamicDataSourceConfiguration.create(
@@ -122,11 +109,10 @@ public class BigQueryToAlloyDB {
         .setCoder(FAILSAFE_ELEMENT_CODER);
 
     pipeline.run();
-
   }
 
-   /** The {@link JdbcIO.PreparedStatementSetter} implementation for mapping json string to query. */
-   public static class MapJsonStringToQuery implements JdbcIO.PreparedStatementSetter<String> {
+  /** The {@link JdbcIO.PreparedStatementSetter} implementation for mapping json string to query. */
+  public static class MapJsonStringToQuery implements JdbcIO.PreparedStatementSetter<String> {
 
     List<String> keyOrder;
 
@@ -146,7 +132,10 @@ public class BigQueryToAlloyDB {
           }
         }
       } catch (Exception e) {
-        LOG.error("Error while mapping BigQuery strings to JDBC: {} with element {}", e.getMessage(), element);
+        LOG.error(
+            "Error while mapping BigQuery strings to JDBC: {} with element {}",
+            e.getMessage(),
+            element);
       }
     }
   }
@@ -161,8 +150,4 @@ public class BigQueryToAlloyDB {
     String data = statement.substring(startIndex + 1, endIndex);
     return Splitter.on(',').splitToList(data);
   }
-
-
-
- 
 }

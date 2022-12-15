@@ -16,7 +16,6 @@
 package com.google.cloud.teleport.v2.options;
 
 import com.google.cloud.teleport.metadata.TemplateParameter;
-import org.apache.beam.sdk.options.Validation;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.BigQueryReadOptions;
 
 /**
@@ -110,7 +109,6 @@ public interface BigQueryToJdbcOptions extends BigQueryReadOptions {
   String getStatement();
 
   void setStatement(String statement);
-
 
   @TemplateParameter.KmsEncryptionKey(
       order = 10,
