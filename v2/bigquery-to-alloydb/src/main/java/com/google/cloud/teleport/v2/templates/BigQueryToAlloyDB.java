@@ -27,12 +27,26 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.Validation.Required;
 //own imports
-import com.google.cloud.teleport.v2.templates.BigQueryToAlloyDB.BigQueryToAlloyDBOptions;
 import org.apache.beam.sdk.io.TextIO;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.ReadBigQuery;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.TableRowToJsonFn;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.BigQueryReadOptions;
 import org.apache.beam.sdk.transforms.ParDo;
+import com.google.cloud.teleport.v2.options.BigQueryToJdbcOptions;
+import org.apache.beam.sdk.values.PCollection;
+import com.google.cloud.teleport.v2.io.DynamicJdbcIO;
+import java.util.List;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import com.google.cloud.teleport.v2.utils.KMSEncryptedNestedValue;
+import org.apache.beam.sdk.io.jdbc.JdbcIO;
+import com.google.cloud.teleport.v2.coders.FailsafeElementCoder;
+import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.google.common.base.Splitter;
+import java.sql.Types;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 
 
 /**
@@ -44,32 +58,16 @@ import org.apache.beam.sdk.transforms.ParDo;
     category = TemplateCategory.BATCH,
     displayName = "BigQuery to AlloyDB",
     description = "A pipeline to export a BigQuery table into AlloyDB.",
-    optionsClass = BigQueryToAlloyDBOptions.class,
+    optionsClass = BigQueryToJdbcOptions.class,
     flexContainerName = "bigquery-to-alloydb",
     contactInformation = "https://cloud.google.com/support")
 public class BigQueryToAlloyDB {
 
-  /**
-   * The {@link BigQueryToAlloyDBOptions} class provides the custom execution options passed by the
-   * executor at the command-line.
-   */
-  public interface BigQueryToAlloyDBOptions extends PipelineOptions {
+  /* Logger for class.*/
+  private static final Logger LOG = LoggerFactory.getLogger(BigQueryToAlloyDB.class);
 
-    @TemplateParameter.Text(
-        order = 1,
-        optional = true,
-        regexes = {"^.+$"},
-        description = "Input SQL query.",
-        helpText = "Query to be executed on the source to extract the data.",
-        example = "select * from sampledb.sample_table")
-    String getQuery();
-
-
-    /*
-    TODO: Look at parameters included in python version and add them here.
-    include parameters needed for JDBC connection.
-    */
-  }
+  public static final FailsafeElementCoder<String, String> FAILSAFE_ELEMENT_CODER =
+      FailsafeElementCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of());
 
   /**
    * Runs a pipeline which reads data from BigQuery and writes it to AlloyDB.
@@ -81,38 +79,24 @@ public class BigQueryToAlloyDB {
     // BigQueryToAlloyDBOptions options =
     //     PipelineOptionsFactory.fromArgs(args).withValidation().as(BigQueryToAlloyDBOptions.class);
     
-    BigQueryReadOptions options = PipelineOptionsFactory.fromArgs(args)
-        .withValidation().as(BigQueryReadOptions.class);
+    BigQueryToJdbcOptions options = PipelineOptionsFactory.fromArgs(args)
+        .withValidation().as(BigQueryToJdbcOptions.class);
 
     Pipeline pipeline = Pipeline.create(options);
 
-    pipeline
+    PCollection<String> tableDataString = pipeline
         .apply(
             "ReadFromBigQuery",
             ReadBigQuery.newBuilder()
                 .setOptions(options)
                 .build())
-        .apply("Convert to json", ParDo.of(new TableRowToJsonFn()))
-        .apply(
-            "Write to a text file",
-            TextIO.write().to("gs://eenclona-sandbox-project1-bq-alloy/output"));
-
-    pipeline.run();
-
-    /*
-    // CloudAlloyDBTableConfiguration AlloyDBTableConfig =
-    //     new CloudAlloyDBTableConfiguration.Builder()
-    //         .withProjectId(options.getAlloyDBWriteProjectId())
-    //         .withInstanceId(options.getAlloyDBWriteInstanceId())
-    //         .withAppProfileId(options.getAlloyDBWriteAppProfile())
-    //         .withTableId(options.getAlloyDBWriteTableId())
-    //         .build();
+        .apply("Convert to json", ParDo.of(new TableRowToJsonFn()));
 
     DynamicJdbcIO.DynamicDataSourceConfiguration dataSourceConfiguration =
-    DynamicJdbcIO.DynamicDataSourceConfiguration.create(
-            options.getDriverClassName(),
-            maybeDecrypt(options.getConnectionUrl(), options.getKMSEncryptionKey()))
-        .withDriverJars(options.getDriverJars());
+        DynamicJdbcIO.DynamicDataSourceConfiguration.create(
+                options.getDriverClassName(),
+                maybeDecrypt(options.getConnectionUrl(), options.getKMSEncryptionKey()))
+            .withDriverJars(options.getDriverJars());
 
     if (options.getUsername() != null) {
       dataSourceConfiguration =
@@ -128,46 +112,83 @@ public class BigQueryToAlloyDB {
       dataSourceConfiguration =
           dataSourceConfiguration.withConnectionProperties(options.getConnectionProperties());
     }
-    
-    "writeToJdbc",
+
+
+    tableDataString
+            .apply(
+                "writeToJdbc",
                 DynamicJdbcIO.<String>write()
                     .withDataSourceConfiguration(dataSourceConfiguration)
                     .withStatement(options.getStatement())
                     .withPreparedStatementSetter(
-                        new MapJsonStringToQuery(getKeyOrder(options.getStatement()))));
+                        new MapJsonStringToQuery(getKeyOrder(options.getStatement()))))
+            .setCoder(FAILSAFE_ELEMENT_CODER);
 
-    JdbcIO.<KV<Integer, String>>write()
-      .withDataSourceConfiguration(JdbcIO.DataSourceConfiguration.create(
-            "com.mysql.jdbc.Driver", "jdbc:mysql://hostname:3306/mydb")
-          .withUsername("username")
-          .withPassword("password"))
-      .withStatement("insert into Person values(?, ?)")
-      .withPreparedStatementSetter(new JdbcIO.PreparedStatementSetter<KV<Integer, String>>() {
-        public void setParameters(KV<Integer, String> element, PreparedStatement query)
-          throws SQLException {
-          query.setInt(1, kv.getKey());
-          query.setString(2, kv.getValue());
-        }
-      }
+  
+ 
 
-    Pipeline pipeline = Pipeline.create(options);
 
-    pipeline
-        .apply(
-            "AvroToMutation",
-            BigQueryIO.read(
-                    AvroToMutation.newBuilder()
-                        .setColumnFamily(options.getAlloyDBWriteColumnFamily())
-                        .setRowkey(options.getReadIdColumn())
-                        .build())
-                .fromQuery(options.getReadQuery())
-                .withoutValidation()
-                .withTemplateCompatibility()
-                .usingStandardSql())
-        .apply("WriteToTable", CloudAlloyDBIO.writeToTable(AlloyDBTableConfig));
+        // tableDataString.apply(
+        //     "Write to a text file",
+        //     TextIO.write().to("gs://eenclona-sandbox-project1-bq-alloy/output"));
 
     pipeline.run();
 
+       
+    /* 
+   
     */
+    
   }
+
+   /** The {@link JdbcIO.PreparedStatementSetter} implementation for mapping json string to query. */
+   public static class MapJsonStringToQuery implements JdbcIO.PreparedStatementSetter<String> {
+
+    List<String> keyOrder;
+
+    public MapJsonStringToQuery(List<String> keyOrder) {
+      this.keyOrder = keyOrder;
+    }
+
+    public void setParameters(String element, PreparedStatement query) throws SQLException {
+      try {
+        JSONObject object = new JSONObject(element);
+        for (int i = 0; i < keyOrder.size(); i++) {
+          String key = keyOrder.get(i);
+          if (!object.has(key) || object.get(key) == JSONObject.NULL) {
+            query.setNull(i + 1, Types.NULL);
+          } else {
+            query.setObject(i + 1, object.get(key));
+          }
+        }
+      } catch (Exception e) {
+        LOG.error("Error while mapping BigQuery strings to JDBC: {} with element {}", e.getMessage(), element);
+      }
+    }
+  }
+
+  private static KMSEncryptedNestedValue maybeDecrypt(String unencryptedValue, String kmsKey) {
+    return new KMSEncryptedNestedValue(unencryptedValue, kmsKey);
+  }
+
+  private static List<String> getKeyOrder(String statement) {
+    int startIndex = statement.indexOf("(");
+    int endIndex = statement.indexOf(")");
+    String data = statement.substring(startIndex + 1, endIndex);
+    return Splitter.on(',').splitToList(data);
+  }
+
+
+
+  /*
+   * 
+   * Notes:
+   * Edge cases not tested:
+   * - Nested, structs
+   * - Null values
+   * 
+   * 
+   * Limitations:
+   * - Need to put in type of data in --statement ?::(type) - especially for numeric values
+   */
 }
