@@ -26,7 +26,6 @@ import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.Validation.Required;
-//own imports
 import org.apache.beam.sdk.io.TextIO;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.ReadBigQuery;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.TableRowToJsonFn;
@@ -75,9 +74,6 @@ public class BigQueryToAlloyDB {
    * @param args arguments to the pipeline
    */
   public static void main(String[] args) {
-
-    // BigQueryToAlloyDBOptions options =
-    //     PipelineOptionsFactory.fromArgs(args).withValidation().as(BigQueryToAlloyDBOptions.class);
     
     BigQueryToJdbcOptions options = PipelineOptionsFactory.fromArgs(args)
         .withValidation().as(BigQueryToJdbcOptions.class);
@@ -91,6 +87,8 @@ public class BigQueryToAlloyDB {
                 .setOptions(options)
                 .build())
         .apply("Convert to json", ParDo.of(new TableRowToJsonFn()));
+
+    //TODO: Call DLP Module
 
     DynamicJdbcIO.DynamicDataSourceConfiguration dataSourceConfiguration =
         DynamicJdbcIO.DynamicDataSourceConfiguration.create(
@@ -113,32 +111,18 @@ public class BigQueryToAlloyDB {
           dataSourceConfiguration.withConnectionProperties(options.getConnectionProperties());
     }
 
-
     tableDataString
-            .apply(
-                "writeToJdbc",
-                DynamicJdbcIO.<String>write()
-                    .withDataSourceConfiguration(dataSourceConfiguration)
-                    .withStatement(options.getStatement())
-                    .withPreparedStatementSetter(
-                        new MapJsonStringToQuery(getKeyOrder(options.getStatement()))))
-            .setCoder(FAILSAFE_ELEMENT_CODER);
-
-  
- 
-
-
-        // tableDataString.apply(
-        //     "Write to a text file",
-        //     TextIO.write().to("gs://eenclona-sandbox-project1-bq-alloy/output"));
+        .apply(
+            "writeToJdbc",
+            DynamicJdbcIO.<String>write()
+                .withDataSourceConfiguration(dataSourceConfiguration)
+                .withStatement(options.getStatement())
+                .withPreparedStatementSetter(
+                    new MapJsonStringToQuery(getKeyOrder(options.getStatement()))))
+        .setCoder(FAILSAFE_ELEMENT_CODER);
 
     pipeline.run();
 
-       
-    /* 
-   
-    */
-    
   }
 
    /** The {@link JdbcIO.PreparedStatementSetter} implementation for mapping json string to query. */
@@ -180,15 +164,5 @@ public class BigQueryToAlloyDB {
 
 
 
-  /*
-   * 
-   * Notes:
-   * Edge cases not tested:
-   * - Nested, structs
-   * - Null values
-   * 
-   * 
-   * Limitations:
-   * - Need to put in type of data in --statement ?::(type) - especially for numeric values
-   */
+ 
 }
