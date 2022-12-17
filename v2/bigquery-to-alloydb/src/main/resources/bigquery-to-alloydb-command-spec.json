@@ -1,0 +1,7 @@
+{
+  "mainClass": "com.google.cloud.teleport.v2.templates.BigQueryToAlloyDB",
+  "classPath": "/template/bigquery-to-alloydb/*:/template/bigquery-to-alloydb/libs/*:/template/bigquery-to-alloydb/classes",
+  "defaultParameterValues": {
+    "labels": "{\"goog-dataflow-provided-template-type\":\"flex\", \"goog-dataflow-provided-template-name\":\"bigquery_to_alloydb\"}"
+  }
+}

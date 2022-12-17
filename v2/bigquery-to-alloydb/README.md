@@ -76,7 +76,7 @@ CREATE TABLE bq_dataset_1 (
     ```
 Note that statement uses `(?, ?::(data type))` syntax, where `::` means that the value will be casted into a specific data type and `?` refers to the `?` syntax in prepared statement. More example can be found here https://beam.apache.org/releases/javadoc/2.0.0/org/apache/beam/sdk/io/jdbc/JdbcIO.html under "Writing to JDBC datasource".
 
-11. Verify that your alloydb table has the data that you just inserted. 
+11. Verify that your alloydb table has the data that you just inserted.
     1. SSH into your compute engine instance
     2. Connect to AlloyDB instance via 'psql -h IP_ADDRESS -U USERNAME' using private IP of alloy db instance and 'postgres' as the username
     3. Run command `SELECT * FROM bq_dataset_1;` and check that data has been inserted into the table
@@ -86,7 +86,7 @@ Note that statement uses `(?, ?::(data type))` syntax, where `::` means that the
 
 ### Optional: using secret manager for database password and connectionUrl
 1. Ensure that Secret Manager API is enabled and that Compute Engine default service account has Secret Manager Secret Accessor role.
-2. Create secrets in the console or use the following gcloud command to create a secret for your database password and connectionUrl. Note that using gcloud command on your compute engine instance will require you to grant the Secret Manager Admin role. 
+2. Create secrets in the console or use the following gcloud command to create a secret for your database password and connectionUrl. Note that using gcloud command on your compute engine instance will require you to grant the Secret Manager Admin role.
 ```
 echo -n "password" | gcloud secrets create my-password --replication-policy="automatic" --data-file=-
 
