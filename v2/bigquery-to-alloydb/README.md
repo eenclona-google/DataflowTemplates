@@ -45,10 +45,11 @@ CREATE TABLE bq_dataset_1 (
         - Dataflow Worker
         - Storage Admin
         - Service Account User
+        - Secret Manager Secret Accessor
 8. Clone repo to the Compute Engine instance.
     1. First install git - `sudo apt-get install git-all`
     2. Clone repo with command `git clone https://github.com/eenclona-google/DataflowTemplates.git`
-9. Enable Dataflow API
+9. Enable Dataflow API and Secret Manager API.
 10. Run code.
     1. Install maven with `sudo apt install maven`
     2. cd into the root directory via `cd DataflowTemplates`
@@ -75,17 +76,24 @@ CREATE TABLE bq_dataset_1 (
     ```
 Note that statement uses `(?, ?::(data type))` syntax, where `::` means that the value will be casted into a specific data type and `?` refers to the `?` syntax in prepared statement. More example can be found here https://beam.apache.org/releases/javadoc/2.0.0/org/apache/beam/sdk/io/jdbc/JdbcIO.html under "Writing to JDBC datasource".
 
+11. Verify that your alloydb table has the data that you just inserted. 
+    1. SSH into your compute engine instance
+    2. Connect to AlloyDB instance via 'psql -h IP_ADDRESS -U USERNAME' using private IP of alloy db instance and 'postgres' as the username
+    3. Run command `SELECT * FROM bq_dataset_1;` and check that data has been inserted into the table
+
+
+
+
 ### Optional: using secret manager for database password and connectionUrl
-1. Enable Secret Manager API
-2. Use following gcloud command to create a secret for your database password and connectionUrl
+1. Ensure that Secret Manager API is enabled and that Compute Engine default service account has Secret Manager Secret Accessor role.
+2. Create secrets in the console or use the following gcloud command to create a secret for your database password and connectionUrl. Note that using gcloud command on your compute engine instance will require you to grant the Secret Manager Admin role. 
 ```
 echo -n "password" | gcloud secrets create my-password --replication-policy="automatic" --data-file=-
 
-echo -n "10.88.160.2" | gcloud secrets create my-ip --replication-policy="automatic" --data-file=-
+echo -n "jdbc:postgresql://10.88.160.2/" | gcloud secrets create my-ip --replication-policy="automatic" --data-file=-
 ```
 
-3. Add Secret Manager Secret Accessor role to Compute Engine default service account.
-4. Call above code but replace connectionUrl and password with your secret names for connectionUrl and password like the one below:
+3. Call code from Step 10 above but replace connectionUrl and password with your secret names for connectionUrl and password like the one below:
 
 ```
  mvn compile exec:java \
@@ -105,6 +113,7 @@ echo -n "10.88.160.2" | gcloud secrets create my-ip --replication-policy="automa
 
 
 ```
+4. Check whether your Alloydb table has the newly inserted data.
 
 
 ## Known Limitations
