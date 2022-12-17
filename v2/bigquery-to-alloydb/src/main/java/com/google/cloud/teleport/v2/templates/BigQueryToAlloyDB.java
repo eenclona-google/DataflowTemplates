@@ -15,6 +15,10 @@
  */
 package com.google.cloud.teleport.v2.templates;
 
+import com.google.api.gax.rpc.NotFoundException;
+import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
+import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
+import com.google.cloud.secretmanager.v1.SecretVersionName;
 import com.google.cloud.teleport.metadata.Template;
 import com.google.cloud.teleport.metadata.TemplateCategory;
 import com.google.cloud.teleport.v2.coders.FailsafeElementCoder;
@@ -24,6 +28,7 @@ import com.google.cloud.teleport.v2.transforms.BigQueryConverters.ReadBigQuery;
 import com.google.cloud.teleport.v2.transforms.BigQueryConverters.TableRowToJsonFn;
 import com.google.cloud.teleport.v2.utils.KMSEncryptedNestedValue;
 import com.google.common.base.Splitter;
+import java.io.IOException;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -38,6 +43,7 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+// import java.lang.String;
 /**
  * Dataflow template which reads BigQuery data and writes it to AlloyDB. The source data can be
  * either a BigQuery table or an SQL query.
@@ -58,6 +64,8 @@ public class BigQueryToAlloyDB {
   public static final FailsafeElementCoder<String, String> FAILSAFE_ELEMENT_CODER =
       FailsafeElementCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of());
 
+  private static String projectId;
+
   /**
    * Runs a pipeline which reads data from BigQuery and writes it to AlloyDB.
    *
@@ -67,6 +75,12 @@ public class BigQueryToAlloyDB {
 
     BigQueryToJdbcOptions options =
         PipelineOptionsFactory.fromArgs(args).withValidation().as(BigQueryToJdbcOptions.class);
+
+    for (String arg : args) {
+      if (arg.contains("--project=")) {
+        projectId = arg.substring(arg.indexOf("=") + 1, arg.length());
+      }
+    }
 
     Pipeline pipeline = Pipeline.create(options);
 
@@ -80,7 +94,7 @@ public class BigQueryToAlloyDB {
     DynamicJdbcIO.DynamicDataSourceConfiguration dataSourceConfiguration =
         DynamicJdbcIO.DynamicDataSourceConfiguration.create(
                 options.getDriverClassName(),
-                maybeDecrypt(options.getConnectionUrl(), options.getKMSEncryptionKey()))
+                maybeGetSecret(options.getConnectionUrl(), options.getKMSEncryptionKey()))
             .withDriverJars(options.getDriverJars());
 
     if (options.getUsername() != null) {
@@ -91,7 +105,7 @@ public class BigQueryToAlloyDB {
     if (options.getPassword() != null) {
       dataSourceConfiguration =
           dataSourceConfiguration.withPassword(
-              maybeDecrypt(options.getPassword(), options.getKMSEncryptionKey()));
+              maybeGetSecret(options.getPassword(), options.getKMSEncryptionKey()));
     }
     if (options.getConnectionProperties() != null) {
       dataSourceConfiguration =
@@ -142,6 +156,26 @@ public class BigQueryToAlloyDB {
 
   private static KMSEncryptedNestedValue maybeDecrypt(String unencryptedValue, String kmsKey) {
     return new KMSEncryptedNestedValue(unencryptedValue, kmsKey);
+  }
+
+  private static KMSEncryptedNestedValue maybeGetSecret(String secretName, String kmsKey) {
+    try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
+
+      SecretVersionName secretVersionName = SecretVersionName.of(projectId, secretName, "latest");
+
+      AccessSecretVersionResponse response = client.accessSecretVersion(secretVersionName);
+
+      String secret = response.getPayload().getData().toStringUtf8();
+
+      return maybeDecrypt(secret, kmsKey);
+    } catch (IOException e) {
+      throw new RuntimeException("Unable to read secret");
+    } catch (NotFoundException e) {
+      return maybeDecrypt(secretName, kmsKey);
+    } catch (IllegalArgumentException e) {
+      // to catch cases where url connection string is passed with "/"
+      return maybeDecrypt(secretName, kmsKey);
+    }
   }
 
   private static List<String> getKeyOrder(String statement) {

@@ -69,19 +69,53 @@ CREATE TABLE bq_dataset_1 (
     --driverJars=gs://eenclona-sandbox-project3-prd-bucket/postgresql-42.5.1.jar \
     --username=postgres \
     --password=password \
-    --connectionProperties=username=postgres;password=password \
     --statement=\"INSERT INTO bq_dataset_1 (country_region_code,date,residential_percent_change_from_baseline) VALUES (?, ?::date, ?::integer);\" \
     --runner=DataflowRunner \
     --region=us-central1"
     ```
+Note that statement uses `(?, ?::(data type))` syntax, where `::` means that the value will be casted into a specific data type and `?` refers to the `?` syntax in prepared statement. More example can be found here https://beam.apache.org/releases/javadoc/2.0.0/org/apache/beam/sdk/io/jdbc/JdbcIO.html under "Writing to JDBC datasource".
+
+### Optional: using secret manager for database password and connectionUrl
+1. Enable Secret Manager API
+2. Use following gcloud command to create a secret for your database password and connectionUrl
+```
+echo -n "password" | gcloud secrets create my-password --replication-policy="automatic" --data-file=-
+
+echo -n "10.88.160.2" | gcloud secrets create my-ip --replication-policy="automatic" --data-file=-
+```
+
+3. Add Secret Manager Secret Accessor role to Compute Engine default service account.
+4. Call above code but replace connectionUrl and password with your secret names for connectionUrl and password like the one below:
+
+```
+ mvn compile exec:java \
+    -Dexec.mainClass=com.google.cloud.teleport.v2.templates.BigQueryToAlloyDB \
+    -Dexec.args="\
+    --query=\"SELECT country_region_code,date,residential_percent_change_from_baseline FROM eenclona-sandbox-project3-prd.google_community_mobility_reports.mobility_report LIMIT 100;\" \
+    --tempLocation=gs://eenclona-sandbox-project3-prd-bucket/temp \
+    --project=eenclona-sandbox-project3-prd \
+    --driverClassName=org.postgresql.Driver \
+    --connectionUrl=my-ip \
+    --driverJars=gs://eenclona-sandbox-project3-prd-bucket/postgresql-42.5.1.jar \
+    --username=postgres \
+    --password=my-password \
+    --statement=\"INSERT INTO bq_dataset_1 (country_region_code,date,residential_percent_change_from_baseline) VALUES (?, ?::date, ?::integer);\" \
+    --runner=DataflowRunner \
+    --region=us-central1"
+
+
+```
 
 
 ## Known Limitations
-1. This code was not yet tested on tables with nested data in BigQuery.
+1. This code is not yet tested on tables with nested data in BigQuery.
+2. This code is not yet tested to make use of KMS key.
 2. Data from BigQuery will be read as a String, so we must specify the actual data type when inserting them into AlloyDB using SQL's ?::(type) syntax
 
 
 ## To Do
 1. Update documentation above for running code as a flex template
-2. Determine if connectionProperties is a required parameter when exec class
-3. Incorporate DLP module
+2. Incorporate DLP module
+3. Have gcloud commands for some of the steps in the demo above.
+4. Include --additional-experiments=enable_prime flag to use dataflow prime.
+5. Find cleaner way to get project id
